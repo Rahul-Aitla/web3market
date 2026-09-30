@@ -1,209 +1,232 @@
 # Web3 AI Prompt Marketplace
 
-A college mini project: a marketplace for AI prompts with a live LLM playground and crypto payments on Ethereum Sepolia testnet.
+A marketplace for AI prompts (text, image-gen, video-gen, dev, UI/design) with a **live LLM playground** for text prompts and **crypto-native payments** on the Ethereum Sepolia testnet.
 
-> Full technical plan: see `web3-ai-marketplace-buildplan.md`.
-> This README is the simple, step-by-step guide. Start with Phase 0.
+Built as a college mini project. Buyers connect a wallet, try eligible prompts in a real playground before purchasing, pay on-chain, and download the prompt file through a signed, purchase-gated link. Sellers upload a prompt file plus either a playground configuration or preview media, then publish the listing on-chain.
 
----
-
-## What you need (overview)
-
-No coding in Phase 0. You only collect free accounts and keys.
-
-You need 2 wallets + 7 free services:
-
-| # | What | What you get | Where to save |
-|---|------|--------------|---------------|
-| 1 | MetaMask burner wallet | 2 addresses: deployer + buyer | Notepad first, then `.env` |
-| 2 | Sepolia test ETH (faucet) | Fake ETH in both wallets | On-chain, check on Etherscan |
-| 3 | Alchemy | RPC URL for Sepolia | `SEPOLIA_RPC_URL` |
-| 4 | Neon Postgres | Database URL | `DATABASE_URL` |
-| 5 | Groq | API key | `GROQ_API_KEY` |
-| 6 | Upstash Redis | REST URL + token | `UPSTASH_*` |
-| 7 | WalletConnect Cloud | Project ID | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` |
-| 8 | Etherscan | API key for contract verify | `ETHERSCAN_API_KEY` |
+> Detailed phase-by-phase build plan (with review notes): [`web3-ai-marketplace-buildplan.md`](web3-ai-marketplace-buildplan.md)
 
 ---
 
-## Phase 0 - Detailed Steps
+## Features
 
-### Step 1. Install MetaMask and make 2 accounts
+- **Wallet auth (SIWE)** — Sign-In-With-Ethereum verified against domain, chainId, nonce and expiry; JWT session cookie (httpOnly, 7 days); forced re-sign on MetaMask account switch
+- **Seller studio** — prompt file upload with extension **and** magic-byte validation (a `.exe` renamed `.txt` is rejected), playground inputs/system-prompt config for text categories, preview media for visual categories
+- **On-chain listing** — `Marketplace.listAsset` on Sepolia; DB status only flips to `PUBLISHED` after the on-chain listing is confirmed to belong to the session wallet
+- **Catalog** — server-rendered, `force-dynamic`, category filter + text search + pagination (24/page)
+- **Live playground** — Groq-backed; the seller's system prompt never leaves the server, user values travel as a user turn; rate-limited per user
+- **Purchase flow** — exact-payment `purchase()` on-chain → receipt verified server-side (status, contract address, decoded `Purchased` event bound to the **session wallet**, amount check) → `CONFIRMED` purchase row
+- **Gated downloads** — short-lived (5 min) JWT download links that re-check the purchase server-side; files streamed from a private directory never exposed via URL
+- **Reviews** — one review per buyer per asset, enforced by a DB unique constraint
+- **Rate limiting** — Upstash Redis when configured, in-memory fallback for local dev (`/nonce`, `/verify`, `/upload`, `/confirm`, `/playground`)
 
-1. Install MetaMask extension in Chrome.
-2. Create a new wallet. This is a **burner wallet** - use only for college, never put real money in it.
-3. Open MetaMask -> account menu -> Create account. Name it `deployer`.
-4. Create one more account. Name it `buyer`.
-5. Copy both addresses (they start with `0x...`). Keep them in Notepad.
+---
 
-You now have:
-- `DEPLOYER_ADDRESS` = ...
-- `BUYER_ADDRESS` = ...
+## Architecture
 
-### Step 2. Get free test money (do this TODAY)
-
-Test money = Sepolia ETH. Price = $0. Only for testing. You need it in **both** wallets.
-
-Faucets allow only 1 claim per day, so start now.
-
-**Option A - Alchemy faucet (try first, no real ETH needed):**
-
-1. Go to `alchemy.com/faucets/ethereum-sepolia`
-2. Login (make free Alchemy account - you need it for Step 3 anyway).
-3. Paste your `deployer` address, click `Send Me ETH`.
-4. You get 0.1 Sepolia ETH. Wait 1-2 minutes.
-5. Repeat with your `buyer` address. If it says "come back in 24h", use Option B for the 2nd wallet.
-
-**Option B - Google Cloud faucet (only needs Gmail):**
-
-1. Go to `cloud.google.com/application/web3/faucet/ethereum/sepolia`
-2. Login with Google.
-3. Paste address, click claim.
-
-**Option C - Chainlink faucet (backup):**
-
-1. Go to `faucets.chain.link/sepolia`
-2. Connect MetaMask, claim 0.5 ETH.
-
-**See money in MetaMask:**
-
-1. MetaMask -> top-left network list -> turn on `Show test networks`.
-2. Switch network to `Sepolia`.
-3. You should see your balance. If you see 0, you are still on mainnet - switch to Sepolia.
-
-**Prove it worked:**
-
-Paste each address into `sepolia.etherscan.io`. Both must show balance, not 0.
-
-**Common problems:**
-
-- `Need mainnet balance` = skip that faucet. Use Alchemy or Google above.
-- `Rate limited / try tomorrow` = normal. Try next faucet, don't retry same one.
-- `No money after 5 min` = check you are on Sepolia network, not Ethereum mainnet.
-
-### Step 3. Alchemy RPC URL
-
-You already made an Alchemy account in Step 2.
-
-1. Alchemy dashboard -> Create new app.
-2. Chain = Ethereum, Network = Sepolia.
-3. Open the app -> copy the `HTTPS RPC URL`.
-4. Looks like: `https://eth-sepolia.g.alchemy.com/v2/...`
-5. Save it as `SEPOLIA_RPC_URL`. You will paste it in 2 files later.
-
-Test it (replace with your URL):
-```bash
-curl -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' "$SEPOLIA_RPC_URL"
 ```
-Good result: `{"jsonrpc":"2.0","id":1,"result":"0x..."}`
-
-### Step 4. Neon database
-
-1. Go to Neon (or Supabase). Make free account.
-2. Create new Postgres project.
-3. Copy the connection string. Looks like: `postgresql://user:pass@host/dbname`
-4. Save as `DATABASE_URL`.
-
-### Step 5. Groq API key
-
-1. Go to `console.groq.com`. Login.
-2. Create API key.
-3. Save as `GROQ_API_KEY`.
-4. Model used: `llama-3.3-70b-versatile` (set as `GROQ_MODEL`, changeable if retired).
-
-### Step 6. Upstash Redis (for rate limiting)
-
-1. Go to Upstash. Make free account.
-2. Create new Redis database.
-3. Copy `REST URL` and `REST TOKEN`.
-4. Save as `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
-
-### Step 7. WalletConnect Project ID (for wallet button)
-
-1. Go to WalletConnect Cloud. Make free account.
-2. Create new project.
-3. Copy Project ID.
-4. Save as `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`.
-
-### Step 8. Etherscan API key (to verify contract)
-
-1. Go to Etherscan (Sepolia). Make free account.
-2. Go to API keys page, create new key.
-3. Save as `ETHERSCAN_API_KEY`.
-
-### Step 9. Make 2 secret passwords
-
-Run this twice in your terminal. Do not share output in chat:
-```bash
-openssl rand -base64 32
++----------------------------------------------------------------------------+
+|                              NEXT.JS 16 APP                                |
+|  +------------------+  +------------------+  +--------------------------+  |
+|  | Marketplace &    |  | Seller Studio    |  | Live Playground          |  |
+|  | Catalog          |  | (upload + config)|  | (server-side Groq call)  |  |
+|  +------------------+  +------------------+  +--------------------------+  |
++----------------------------------------------------------------------------+
+        |                        |                          |
+        v                        v                          v
++----------------+     +-------------------+      +----------------------+
+| Postgres        |     | Local /uploads    |      | Groq API             |
+| (Supabase/Neon) |     | + signed JWT link |      | (playground LLM call)|
+| + Prisma        |     +-------------------+      +----------------------+
++----------------+            ^
+        ^                     | Purchase record written after on-chain verification
+        |
++-------------------------------------------------------------+
+| wagmi + viem + RainbowKit (wallet connect, SIWE auth)       |
++-------------------------------------------------------------+
+        |
+        v
++-------------------------------------------------------------+
+| Marketplace.sol - deployed + verified on Sepolia testnet    |
+| purchase(assetId) payable -> transfers to seller, emits     |
+| Purchased event                                             |
++-------------------------------------------------------------+
 ```
-- First output = `SESSION_JWT_SECRET`
-- Second output = `DOWNLOAD_TOKEN_SECRET`
 
-### Step 10. Put everything in env files
+## Tech stack
 
-You create these 2 files **after Phase 1** (folders `web/` and `contracts/` don't exist yet).
+| Layer | Choice |
+|---|---|
+| App | Next.js 16 (App Router, Turbopack) · React 19 · TypeScript |
+| UI | Tailwind CSS v4 · shadcn/ui (base-ui) · lucide-react |
+| DB / ORM | PostgreSQL + Prisma 5 |
+| Auth | `siwe` v2 + `jose` v5 (JWT session cookie) |
+| Wallet | wagmi v2 · viem v2 · RainbowKit v2 · TanStack Query |
+| Chain | Ethereum Sepolia (chainId `11155111`) |
+| Contract | Hardhat 2.22.x · Solidity `^0.8.24` · OpenZeppelin v5 |
+| LLM | `groq-sdk`, model from `GROQ_MODEL` |
+| Files | Local filesystem + JWT download tokens (localhost demo only) |
+| Rate limit | `@upstash/ratelimit` + `@upstash/redis` (in-memory fallback) |
 
-`web/.env` (note: `.env`, not `.env.local` - the Prisma CLI only reads `.env`):
+## Repository layout
+
 ```
-DATABASE_URL=
-GROQ_API_KEY=
-GROQ_MODEL=llama-3.3-70b-versatile
-APP_DOMAIN=localhost:3000
-SEED_SELLER_ADDRESS=your deployer address here
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=
-NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS=
-NEXT_PUBLIC_SEPOLIA_RPC_URL=same as SEPOLIA_RPC_URL below
-SEPOLIA_RPC_URL=
-UPLOADS_DIR=../uploads
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
-SESSION_JWT_SECRET=
-DOWNLOAD_TOKEN_SECRET=
+repo-root/
+├── contracts/                    # Hardhat project
+│   ├── contracts/Marketplace.sol
+│   ├── scripts/deploy.ts
+│   ├── scripts/seed-list.ts      # lists seed assets on-chain (idempotent)
+│   ├── test/marketplace.test.ts  # 9 tests
+│   └── hardhat.config.ts
+├── uploads/                      # gitignored, local demo storage
+│   ├── private/                  # sold prompt files - never served raw
+│   └── preview/                  # public preview media
+├── seed/seed-assets.json         # generated by prisma seed, read by seed-list
+└── web/                          # Next.js app
+    ├── prisma/schema.prisma · seed.ts
+    └── src/
+        ├── app/
+        │   ├── layout.tsx · providers.tsx · page.tsx
+        │   ├── marketplace/ page + [slug] detail
+        │   ├── create-asset/ · purchases/
+        │   └── api/  auth/* · assets/* · preview · purchases/* · download
+        ├── components/ (navbar, asset-card, buy-button, playground-panel, ui/*)
+        └── lib/ (prisma, session, categories, wagmi-config, rate-limit, uploads, contracts/)
 ```
+
+---
+
+## Prerequisites
+
+1. **MetaMask** with a **fresh burner wallet** — 2 accounts: `deployer` + `buyer`. Never use a wallet holding real funds.
+2. **Sepolia test ETH** in both wallets (free faucets, ~$0 value):
+   - `alchemy.com/faucets/ethereum-sepolia` (no mainnet balance required)
+   - `cloud.google.com/application/web3/faucet/ethereum/sepolia`
+   - `faucets.chain.link/sepolia`
+   - Verify on `sepolia.etherscan.io` — faucets rate-limit to ~1 claim/day, so start early.
+3. **Alchemy** account → Sepolia app → HTTPS RPC URL
+4. **Postgres** — Supabase or Neon free tier → `DATABASE_URL`
+5. **Groq** API key (`console.groq.com`)
+6. **WalletConnect Cloud** project ID (for RainbowKit; injected MetaMask works without it)
+7. Optional: **Etherscan** API key (contract verification), **Upstash** Redis (distributed rate limiting)
+
+---
+
+## Environment variables
+
+`web/.env` — note: **`.env`, not `.env.local`** (the Prisma CLI only reads `.env`):
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | Postgres connection string, e.g. `postgresql://postgres:PASS@db.<ref>.supabase.co:5432/postgres` |
+| `SEPOLIA_RPC_URL` | Alchemy Sepolia HTTPS URL (server-side RPC) |
+| `NEXT_PUBLIC_SEPOLIA_RPC_URL` | Same URL, exposed to the browser wallet transport |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | WalletConnect Cloud project ID |
+| `NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS` | Filled after contract deploy |
+| `APP_DOMAIN` | Expected SIWE domain, `localhost:3000` for dev |
+| `SEED_SELLER_ADDRESS` | Deployer wallet address (lowercase), used by `prisma/seed.ts` |
+| `GROQ_API_KEY` / `GROQ_MODEL` | Playground LLM (`llama-3.3-70b-versatile` default) |
+| `SESSION_JWT_SECRET` | `openssl rand -base64 32` — signs the session cookie |
+| `DOWNLOAD_TOKEN_SECRET` | `openssl rand -base64 32` — signs download links |
+| `UPLOADS_DIR` | `../uploads` (resolved to absolute path in code) |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | Optional — falls back to in-memory limiter |
 
 `contracts/.env`:
-```
-SEPOLIA_RPC_URL=same as above
-DEPLOYER_PRIVATE_KEY=from MetaMask, burner only, NEVER commit
-ETHERSCAN_API_KEY=
-```
 
-> Never commit `.env` files. They are already in `.gitignore`.
+| Variable | Description |
+|---|---|
+| `SEPOLIA_RPC_URL` | Same Alchemy URL |
+| `DEPLOYER_PRIVATE_KEY` | Burner deployer key — **never commit** |
+| `ETHERSCAN_API_KEY` | For `hardhat verify` |
+| `MARKETPLACE_ADDRESS` | Optional — alternative to passing it to `seed-list.ts` |
+
+Both files are `.gitignore`d. Verify with: `git check-ignore -v web/.env contracts/.env uploads`
 
 ---
 
-## How to know Phase 0 is done
+## Setup
 
-Check all 3:
-
-1. RPC command above returns a `result` number.
-2. Both wallets show balance on `sepolia.etherscan.io`.
-3. All keys are in Notepad / `.env` files, and this passes:
 ```bash
-git check-ignore -v web/.env contracts/.env uploads
+# 1. Contract: test, deploy, verify
+cd contracts
+npm install
+npx hardhat test                                   # 9 tests, runs with no .env
+npx hardhat run scripts/deploy.ts --network sepolia   # → DEPLOYED_ADDRESS=0x...
+npx hardhat verify --network sepolia <ADDRESS>
+
+# 2. Put the address in web/.env as NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS
+
+# 3. Web app: deps, database, seed
+cd ../web
+npm install
+npx prisma db push        # applies schema.prisma to your Postgres
+npx prisma db seed        # seeds 2 demo assets + writes seed/seed-assets.json
+                          # (needs DATABASE_URL + SEED_SELLER_ADDRESS)
+
+# 4. List the seed assets on-chain from the deployer wallet
+cd ../contracts
+npx hardhat run scripts/seed-list.ts --network sepolia -- <ADDRESS>
+
+# 5. Run
+cd ../web
+npm run dev               # http://localhost:3000
 ```
 
-Then say `start phase 1` to scaffold `contracts/` + `web/` + `uploads/`.
+> If port 3000 is busy: `npm run dev -- -p 3100` (also update `APP_DOMAIN` to `localhost:3100`).
 
----
+## Demo script (evaluation day)
+
+1. Connect wallet → SIWE signature → `session` cookie set
+2. Browse `/marketplace`, filter by category, open the seeded **TEXT_PROMPT** asset → run the live playground
+3. Open the **IMAGE_PROMPT** asset → static preview instead of playground
+4. Buy → confirm in MetaMask → watch pending → confirmed
+5. Open the tx on Sepolia Etherscan, point out the `Purchased` event
+6. `/purchases` → Download → file matches the listing
+7. Leave a review; a second one is rejected by the unique constraint
+8. Walk through verified `purchase()` on Etherscan (exact payment, reentrancy guard, squatting note)
+
+## Testing & verification status
+
+- `npx hardhat test` — **9/9 passing** (listing guards, exact-payment revert both ways, double purchase, funds transfer + event)
+- `npx tsc --noEmit` — clean in `web/` and `contracts/`
+- `next build` — clean
+- Upload endpoint smoke-tested: 401 unauthenticated, NUL-byte binary rejection, magic-byte PNG check
+- Rate limiting verified (429 on 11th request/minute)
+
+## Design decisions worth knowing (viva notes)
+
+- **Exact payment** — `purchase()` requires `msg.value == price`, no overpayment-refund logic
+- **`onChainId` starts at 1** — contract reserves `assetId 0` as the unlisted sentinel; Prisma autoincrement guarantees this
+- **`listAsset` is first-come-first-served** — id squatting is mitigated at the app level (list immediately after DRAFT creation; a squatted id is abandoned), documented in the contract
+- **No unlist/price-update** — `ARCHIVED` is display-only; a listed asset stays purchasable on-chain
+- **`/confirm` binds the on-chain `buyer` to the session wallet** before any idempotency check — closes the "replay someone else's txHash" exploit
+- **`fileType` comes from the validated extension**, not client MIME — it becomes the download `Content-Type`
+- **Playground secrecy is best-effort** — a determined user can sometimes coax a model into revealing its system prompt; acknowledged, not claimed as solved
+
+## Known limitations
+
+- File storage is local disk — **localhost demo only**, won't survive serverless deploys
+- `PENDING`/`FAILED` purchase statuses are reserved for a future chain listener (rows are born `CONFIRMED`)
+- SIWE `statement`/`uri` are client-set and cosmetic; domain/chainId/nonce/expiry are the real bindings
+- No gas buffer in the Buy balance check (price only, not price+gas)
+- Rate-limit fallback is per-process in-memory without Upstash configured
+- A seller contract that can't receive ETH makes its listing un-purchasable (transfer reverts)
 
 ## Troubleshooting
 
-- **Faucet rate limited:** normal. Use next faucet in Step 2 list. Fund 1-2 days before demo, keep buyer wallet untouched until demo.
-- **Wrong network in MetaMask:** switch to Sepolia (chainId 11155111). Mainnet balance will show 0 on Sepolia - that's expected.
-- **No real crypto needed:** Sepolia ETH is worthless test money. Never send real ETH.
-- **Local files only:** uploads stay on your laptop disk. Won't work on Vercel/serverless - localhost demo only, which is fine for college.
+| Problem | Fix |
+|---|---|
+| Faucet rate-limited | Normal — try the next faucet in the list; fund 1–2 days before demo |
+| Balance shows 0 in MetaMask | You're on mainnet — switch to Sepolia (chainId 11155111) |
+| `P1000` Prisma auth error | `DATABASE_URL` is missing `:<password>` or the user is wrong — recopy the full URI from the provider dashboard |
+| `/verify` returns 503 | Database unreachable — check `DATABASE_URL` |
+| Build errors about `@x402/*` | Already fixed — aliased to a stub in `next.config.mjs` (unused Coinbase connector deps) |
+| WalletConnect QR wallets fail | Set a real `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` (injected MetaMask works regardless) |
+| Files vanish on deploy | Expected — local-disk storage, localhost demo only |
 
-## Next phases (short map)
+## Next steps / roadmap
 
-- Phase 1: scaffold `contracts/` + `web/` + `uploads/`
-- Phase 2: smart contract + 9 tests + deploy + verify on Sepolia
-- Phase 3: database schema with Prisma
-- Phase 4: wallet connect + SIWE login
-- Phase 5: seller upload
-- Phase 6: catalog + playground
-- Phase 7: buy + download
-- Phase 8: polish + demo
-
-See `web3-ai-marketplace-buildplan.md` for exact agent instructions per phase.
+- [ ] Fill remaining env vars (`DATABASE_URL` password, `contracts/.env` keys, WalletConnect ID, Groq key, `SEED_SELLER_ADDRESS`)
+- [ ] `prisma db push` + `prisma db seed` once DB credentials work
+- [ ] Deploy + verify contract on Sepolia, run `seed-list.ts`
+- [ ] Stretch: escrow-style delivery confirmation, ERC-20 payments, on-chain event listener, Chainlink ETH/USD feed, fal.ai image previews, orphaned-upload cleanup
