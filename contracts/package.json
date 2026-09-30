@@ -1,0 +1,33 @@
+{
+  "name": "contracts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "hardhat test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@typechain/ethers-v6": "^0.5.1",
+    "@typechain/hardhat": "^9.1.0",
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^26.6.3",
+    "dotenv": "^18.0.4",
+    "hardhat": "2.22.19",
+    "ts-node": "^10.9.2",
+    "typechain": "^8.3.2",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "2.0.0",
+    "@nomicfoundation/hardhat-ethers": "3.0.8",
+    "@nomicfoundation/hardhat-verify": "^2.0.0",
+    "@openzeppelin/contracts": "^5.6.1",
+    "chai": "4.5.0",
+    "ethers": "6.17.0"
+  }
+}

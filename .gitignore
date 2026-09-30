@@ -1,0 +1,25 @@
+# deps
+node_modules/
+
+# env - never commit
+.env
+.env.local
+web/.env.local
+contracts/.env
+
+# uploads - local demo files only
+uploads/
+
+# build output
+web/.next/
+web/out/
+contracts/artifacts/
+contracts/cache/
+contracts/typechain-types/
+
+# prisma
+web/prisma/migrations/dev/
+
+# OS
+.DS_Store
+Thumbs.db

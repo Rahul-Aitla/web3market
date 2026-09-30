@@ -1,0 +1,119 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Category {
+  TEXT_PROMPT
+  IMAGE_PROMPT
+  VIDEO_PROMPT
+  CODE_DEV_PROMPT
+  UI_DESIGN_PROMPT
+  SYSTEM_PROMPT
+  N8N_BLUEPRINT
+  MAKE_AUTOMATION
+  CREWAI_SCRIPT
+  LANGCHAIN_PIPELINE
+  MCP_SERVER
+  CURSOR_RULES
+}
+
+enum PreviewMediaType {
+  NONE
+  IMAGE
+  VIDEO
+}
+
+enum AssetStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum PurchaseStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+model User {
+  id            String   @id @default(cuid())
+  walletAddress String   @unique // always stored lowercase
+  nonce         String? // set on each /nonce call; null before first login
+  username      String?  @unique
+  createdAt     DateTime @default(now())
+
+  assets    Asset[]    @relation("SellerAssets")
+  purchases Purchase[]
+  reviews   Review[]
+}
+
+model Asset {
+  id        String @id @default(cuid())
+  onChainId Int    @unique @default(autoincrement())
+  // NOTE: Prisma autoincrement starts at 1 by default. This is required,
+  // not incidental - the contract treats onChainId 0 as "unlisted".
+  // Never write logic (seeding, tests) that could produce onChainId 0.
+  sellerId String
+  seller   User   @relation("SellerAssets", fields: [sellerId], references: [id])
+
+  title    String
+  slug     String @unique
+  shortDesc String
+  fullDesc  String   @db.Text
+  category  Category
+  priceWei  String // BigInt as string; parse with BigInt() / viem helpers in app code
+  status    AssetStatus @default(DRAFT)
+
+  fileStoragePath String // sold prompt file - gated, never public
+  fileType        String
+  fileSizeBytes   Int
+
+  previewMediaType PreviewMediaType @default(NONE)
+  previewMediaPath String? // public sample output, NOT gated
+
+  playgroundConfig Json? // { inputs: [{name,label}], systemPrompt } (model always comes from server env GROQ_MODEL)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchases Purchase[]
+  reviews   Review[]
+
+  @@index([category, status])
+}
+
+model Purchase {
+  id          String         @id @default(cuid())
+  buyerId     String
+  buyer       User           @relation(fields: [buyerId], references: [id])
+  assetId     String
+  asset       Asset          @relation(fields: [assetId], references: [id])
+  txHash      String         @unique
+  amountWei   String
+  status      PurchaseStatus @default(PENDING)
+  blockNumber BigInt?
+  createdAt   DateTime       @default(now())
+
+  @@unique([buyerId, assetId])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  assetId   String
+  asset     Asset    @relation(fields: [assetId], references: [id])
+  rating    Int // enforce 1-5 with zod at the API layer; Prisma can't range-check
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@unique([userId, assetId]) // one review per buyer per asset
+}
