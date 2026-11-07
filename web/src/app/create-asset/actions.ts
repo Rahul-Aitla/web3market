@@ -6,7 +6,7 @@ import { z } from "zod";
 import slugify from "slugify";
 import { Category, PreviewMediaType, Prisma } from "@prisma/client";
 import { parseEther, createPublicClient, http, type Abi } from "viem";
-import { sepolia } from "viem/chains";
+import { targetChain } from "@/lib/chain";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/session";
 import { isPlaygroundEligible } from "@/lib/categories";
@@ -119,7 +119,7 @@ export async function publishAsset(assetId: string) {
   const contractAddress = process.env.NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS;
   if (contractAddress && process.env.SEPOLIA_RPC_URL) {
     const client = createPublicClient({
-      chain: sepolia,
+      chain: targetChain,
       transport: http(process.env.SEPOLIA_RPC_URL),
     });
     const seller = await client.readContract({

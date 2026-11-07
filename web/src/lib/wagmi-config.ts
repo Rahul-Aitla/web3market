@@ -1,6 +1,6 @@
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
 import { http } from "viem";
-import { sepolia } from "wagmi/chains";
+import { targetChain } from "@/lib/chain";
 
 export const wagmiConfig = getDefaultConfig({
   appName: "AI Prompt Marketplace",
@@ -9,9 +9,9 @@ export const wagmiConfig = getDefaultConfig({
   // QR-code wallets need the real value in NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID.
   projectId:
     process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "demo-placeholder",
-  chains: [sepolia],
+  chains: [targetChain],
   transports: {
-    [sepolia.id]: http(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL),
+    [targetChain.id]: http(process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL),
   },
   ssr: true,
 });

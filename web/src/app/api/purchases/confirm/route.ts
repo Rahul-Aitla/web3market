@@ -5,7 +5,7 @@ import {
   http,
   type Abi,
 } from "viem";
-import { sepolia } from "viem/chains";
+import { targetChain } from "@/lib/chain";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   }
 
   const client = createPublicClient({
-    chain: sepolia,
+    chain: targetChain,
     transport: http(process.env.SEPOLIA_RPC_URL),
   });
 

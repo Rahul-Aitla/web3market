@@ -146,6 +146,37 @@ Both files are `.gitignore`d. Verify with: `git check-ignore -v web/.env contrac
 
 ## Setup
 
+### Quick local demo (recommended — no faucet, no deployer key)
+
+Runs the whole app against a local Hardhat chain (`chainId 31337`). `web/.env` is already configured for this mode (`NEXT_PUBLIC_CHAIN_ID=31337`, RPC = `http://127.0.0.1:8545`, `SEED_SELLER_ADDRESS` = Hardhat account #0 `0xf39F…2266`).
+
+```bash
+# Terminal 1 — keep running: local chain with 20 pre-funded wallets
+cd contracts && npx hardhat node
+
+# Terminal 2 — deploy (seconds, free)
+cd contracts
+npx hardhat run scripts/deploy.ts --network localhost   # → DEPLOYED_ADDRESS=0x5FbDB...aa3
+# paste that into web/.env → NEXT_PUBLIC_MARKETPLACE_CONTRACT_ADDRESS
+
+# Database (needs a valid DATABASE_URL in web/.env)
+cd ../web
+npx prisma db push && npx prisma db seed
+
+# List seed assets on the local chain
+cd ../contracts
+npx hardhat run scripts/seed-list.ts --network localhost -- <ADDRESS>
+
+# Run the app
+cd ../web && npm run dev        # http://localhost:3000
+```
+
+**MetaMask for the demo:** add network `Localhost 8545` (RPC `http://127.0.0.1:8545`, chainId `31337`), then import a Hardhat test key for the buyer — e.g. account #1 `0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d` (10,000 test ETH, public knowledge, local chain only). The seller is account #0 `0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266`.
+
+> To go back to Sepolia: set `NEXT_PUBLIC_CHAIN_ID=11155111`, restore the Alchemy RPC URLs, create `contracts/.env` with `DEPLOYER_PRIVATE_KEY`, and follow the full setup below.
+
+### Full setup (Sepolia testnet)
+
 ```bash
 # 1. Contract: test, deploy, verify
 cd contracts

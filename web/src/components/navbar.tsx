@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAccount, useSignMessage } from "wagmi";
 import { SiweMessage } from "siwe";
+import { CHAIN_ID } from "@/lib/chain";
 
 export function Navbar() {
   const { address, isConnected } = useAccount();
@@ -40,7 +41,7 @@ export function Navbar() {
           statement: "Sign in to AI Prompt Marketplace",
           uri: window.location.origin,
           version: "1",
-          chainId: 11155111,
+          chainId: CHAIN_ID,
           nonce,
           expirationTime: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
         });

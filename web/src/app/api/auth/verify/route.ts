@@ -4,6 +4,7 @@ import { SiweMessage, generateNonce } from "siwe";
 import { SignJWT } from "jose";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, clientKey } from "@/lib/rate-limit";
+import { CHAIN_ID } from "@/lib/chain";
 
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
 
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Verification failed" }, { status: 401 });
   }
 
-  if (siweMessage.chainId !== 11155111) {
+  if (siweMessage.chainId !== CHAIN_ID) {
     return NextResponse.json({ error: "Wrong chain" }, { status: 401 });
   }
   if (
